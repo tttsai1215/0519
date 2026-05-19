@@ -11,8 +11,8 @@ let gameCanvas, ctx, videoElement;
 let videoDrawProps = { x: 0, y: 0, w: CANVAS_WIDTH, h: CANVAS_HEIGHT };
 
 const GAME_WEAPONS = ['rock', 'paper', 'scissors'];
-const ICON_MAP = { rock: '✊', paper: '🖐', scissors: '✌️', signal_thumbs_up: '👍', signal_thumbs_down: '👎' };
-const LABEL_MAP = { rock: '石頭', paper: '布', scissors: '剪刀', signal_thumbs_up: '讚', signal_thumbs_down: '倒讚' };
+const ICON_MAP = { rock: '✊', paper: '🖐', scissors: '✌️', signal_one: '☝️' };
+const LABEL_MAP = { rock: '石頭', paper: '布', scissors: '剪刀', signal_one: '1' };
 const RULES_MATRIX = { rock: 'scissors', scissors: 'paper', paper: 'rock' };
 
 // 復古 8-bit 像素配色
@@ -148,17 +148,15 @@ function analyzeCoordinates(pts) {
     const ringCurled = isCurled(pts[16], pts[14]);
     const pinkyCurled = isCurled(pts[20], pts[18]);
 
+    // 選單控制手勢優先判定：☝️ (食指伸直，其他彎曲)
+    if (indexExtended && middleCurled && ringCurled && pinkyCurled) {
+        return 'signal_one';
+    }
+
     // 猜拳手勢
     if (indexCurled && middleCurled && ringCurled && pinkyCurled) return 'rock';
     if (indexExtended && middleExtended && ringExtended && pinkyExtended) return 'paper';
     if (indexExtended && middleExtended && ringCurled && pinkyCurled) return 'scissors';
-
-    // 選單控制手勢：👍 / 👎
-    const allFingersCurled = indexCurled && middleCurled && ringCurled && pinkyCurled;
-    if (allFingersCurled) {
-        if (pts[4].y < pts[3].y && pts[3].y < pts[2].y) return 'signal_thumbs_up';
-        if (pts[4].y > pts[3].y && pts[3].y > pts[2].y) return 'signal_thumbs_down';
-    }
 
     return 'unidentified';
 }
@@ -362,15 +360,16 @@ function renderSelectionMenu() {
     displayStatsPanel();
     renderCustomText('PLAY AGAIN?', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 85, 32, RETRO_PALETTE.white);
 
-    renderCustomText('手勢: 右手 👍 繼續 / 左手 👍 結束', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 30, 14, RETRO_PALETTE.lightGray);
+    renderCustomText('手勢: 右手 ☝️ (1) 繼續 / 左手 ☝️ (1) 結束', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 30, 14, RETRO_PALETTE.lightGray);
 
     const btnW = 140, btnH = 50, btnY = CANVAS_HEIGHT / 2 + 20;
     renderPixelButton('QUIT', CANVAS_WIDTH / 2 - btnW - 15, btnY, btnW, btnH, RETRO_PALETTE.red);
     renderPixelButton('AGAIN', CANVAS_WIDTH / 2 + 15, btnY, btnW, btnH, RETRO_PALETTE.green);
 
-    if (currentPhase === 'menu_selection' && verifiedGesture === 'signal_thumbs_up') {
+    if (currentPhase === 'menu_selection' && verifiedGesture === 'signal_one') {
         const ratio = executionLockTimer ? Math.min(1, (Date.now() - executionLockTimer) / LOCK_TRIGGER_MS) : 0;
-        const isContinue = trackingHandSide === 'Right';
+        // MediaPipe 在前置鏡頭未鏡像狀態下，'Left' 代表真實玩家的右手
+        const isContinue = trackingHandSide === 'Left';
         const colorBar = isContinue ? RETRO_PALETTE.green : RETRO_PALETTE.red;
         const actionText = isContinue ? '繼續...' : '結束中...';
 
@@ -401,15 +400,14 @@ function updateCoreEngine() {
     };
 
     if (currentPhase === 'menu_selection') {
-        if (verifiedGesture === 'signal_thumbs_up') {
+        if (verifiedGesture === 'signal_one') {
             if (!executionLockTimer) executionLockTimer = currentTimestamp;
             if (currentTimestamp - executionLockTimer >= LOCK_TRIGGER_MS) {
-                // MediaPipe 的 handedness 是根據真實的手，而非鏡像畫面
-                // 'Right' 代表玩家的右手
-                if (trackingHandSide === 'Right') {
-                    resetGameToLobby(); // 右手讚 -> 繼續
-                } else if (trackingHandSide === 'Left') {
-                    switchPhase('game_terminated'); // 左手讚 -> 結束
+                // 'Left' 代表玩家物理上的右手
+                if (trackingHandSide === 'Left') {
+                    resetGameToLobby(); // 右手 1 -> 繼續
+                } else if (trackingHandSide === 'Right') {
+                    switchPhase('game_terminated'); // 左手 1 -> 結束
                 }
                 executionLockTimer = null;
             }
@@ -420,7 +418,7 @@ function updateCoreEngine() {
         if (verifiedGesture && GAME_WEAPONS.includes(verifiedGesture)) {
             if (playerMove !== verifiedGesture) { executionLockTimer = currentTimestamp; playerMove = verifiedGesture; }
             if (currentTimestamp - executionLockTimer >= LOCK_TRIGGER_MS) switchPhase('match_countdown');
-        } else if (verifiedGesture === 'signal_thumbs_up' || !detectedPoints) {
+        } else if (verifiedGesture === 'signal_one' || !detectedPoints) {
             executionLockTimer = null; playerMove = null;
         }
     }
@@ -447,14 +445,19 @@ function updateCoreEngine() {
 
 function handleCanvasClick(e) {
     if (currentPhase !== 'menu_selection') return;    
+    const bounds = gameCanvas.getBoundingClientRect();
+    // 改為使用精準的 e.clientX 與 clientY 來避免觸控或移動延遲造成的錯位點擊
+    const clkX = e.clientX - bounds.left;
+    const clkY = e.clientY - bounds.top;
+    
     const btnW = 140, btnH = 50, btnY = CANVAS_HEIGHT / 2 + 20;
     const quitBtnX = CANVAS_WIDTH / 2 - btnW - 15;
     const againBtnX = CANVAS_WIDTH / 2 + 15;
 
     // AGAIN 按鈕的點擊偵測
-    if (cursorX >= againBtnX && cursorX <= againBtnX + btnW && cursorY >= btnY && cursorY <= btnY + btnH) resetGameToLobby();
+    if (clkX >= againBtnX && clkX <= againBtnX + btnW && clkY >= btnY && clkY <= btnY + btnH) resetGameToLobby();
     // QUIT 按鈕的點擊偵測
-    if (cursorX >= quitBtnX && cursorX <= quitBtnX + btnW && cursorY >= btnY && cursorY <= btnY + btnH) switchPhase('game_terminated');
+    if (clkX >= quitBtnX && clkX <= quitBtnX + btnW && clkY >= btnY && clkY <= btnY + btnH) switchPhase('game_terminated');
 }
 
 function resetGameToLobby() {
