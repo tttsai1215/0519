@@ -310,15 +310,14 @@ function renderLobbyScreen() {
     drawHandJoints(); displayStatsPanel();
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; ctx.fillRect(0, CANVAS_HEIGHT - 90, CANVAS_WIDTH, 90);
 
-    if (!detectedPoints) {
-        renderCustomText('AWAITING PLAYER INPUT', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 55, 20, RETRO_PALETTE.white);
-    } else if (verifiedGesture) {
-        const isValidWeapon = GAME_WEAPONS.includes(verifiedGesture);
-        renderCustomText(isValidWeapon ? `LOCKED: ${ICON_MAP[verifiedGesture]} ${LABEL_MAP[verifiedGesture]}` : 'INVALID GESTURE', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 60, 18, isValidWeapon ? RETRO_PALETTE.green : RETRO_PALETTE.yellow);
+    if (verifiedGesture && GAME_WEAPONS.includes(verifiedGesture)) {
+        renderCustomText(`LOCKED: ${ICON_MAP[verifiedGesture]} ${LABEL_MAP[verifiedGesture]}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 60, 18, RETRO_PALETTE.green);
 
         const ratio = executionLockTimer ? Math.min(1, (Date.now() - executionLockTimer) / LOCK_TRIGGER_MS) : 0;
         ctx.fillStyle = '#444'; ctx.fillRect(CANVAS_WIDTH / 2 - 100, CANVAS_HEIGHT - 35, 200, 10);
         ctx.fillStyle = RETRO_PALETTE.yellow; ctx.fillRect(CANVAS_WIDTH / 2 - 100, CANVAS_HEIGHT - 35, 200 * ratio, 10);
+    } else {
+        renderCustomText('請對著鏡頭出拳：✊ (石頭) 🖐 (布) ✌️ (剪刀)', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 55, 20, RETRO_PALETTE.white);
     }
 }
 
@@ -338,23 +337,25 @@ function renderCountdownScreen() {
     renderCustomText(`LOCKED: ${ICON_MAP[playerMove] || '❓'} ${LABEL_MAP[playerMove]}`, CANVAS_WIDTH / 2, 20, 16, RETRO_PALETTE.white);
 }
 
-function renderRevealScreen() {
-    const delta = Date.now() - phaseTimestamp;
-    const alphaRatio = Math.min(1, Math.max(0, (delta - 300) / 400));
-
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)'; ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    renderCustomText('PLAYER', CANVAS_WIDTH / 4, 60, 18, RETRO_PALETTE.blue);
-    renderCustomText('CPU', CANVAS_WIDTH * 3 / 4, 60, 18, RETRO_PALETTE.red);
-    renderCustomText('VS', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, 34, RETRO_PALETTE.white, RETRO_PALETTE.black);
-
-    renderPixelCard(playerMove, 60, CANVAS_HEIGHT / 2 - 60, 180, 120, RETRO_PALETTE.blue);
-    renderPixelCard(cpuMove, CANVAS_WIDTH - 240, CANVAS_HEIGHT / 2 - 60, 180, 120, RETRO_PALETTE.red, alphaRatio);
-    displayStatsPanel();
+function renderVictoryScreen() { 
+    updateAndRenderEffects(); 
+    displayStatsPanel(); 
+    renderCustomText('YOU WIN!', CANVAS_WIDTH / 2, 60, 34, RETRO_PALETTE.green, RETRO_PALETTE.black); 
+    renderPixelCard(playerMove, CANVAS_WIDTH / 4 - 90, CANVAS_HEIGHT / 2 - 60, 180, 120, RETRO_PALETTE.blue);
+    renderPixelCard(cpuMove, CANVAS_WIDTH * 3 / 4 - 90, CANVAS_HEIGHT / 2 - 60, 180, 120, RETRO_PALETTE.red);
 }
-
-function renderVictoryScreen() { updateAndRenderEffects(); displayStatsPanel(); renderCustomText('YOU WIN!', CANVAS_WIDTH / 2, 60, 34, RETRO_PALETTE.green, RETRO_PALETTE.black); }
-function renderDefeatScreen() { displayStatsPanel(); renderCustomText('YOU LOSE', CANVAS_WIDTH / 2, 60, 34, RETRO_PALETTE.red, RETRO_PALETTE.black); }
-function renderStalemateScreen() { displayStatsPanel(); renderCustomText('DRAW', CANVAS_WIDTH / 2, 60, 34, RETRO_PALETTE.yellow, RETRO_PALETTE.black); }
+function renderDefeatScreen() { 
+    displayStatsPanel(); 
+    renderCustomText('YOU LOSE', CANVAS_WIDTH / 2, 60, 34, RETRO_PALETTE.red, RETRO_PALETTE.black); 
+    renderPixelCard(playerMove, CANVAS_WIDTH / 4 - 90, CANVAS_HEIGHT / 2 - 60, 180, 120, RETRO_PALETTE.blue);
+    renderPixelCard(cpuMove, CANVAS_WIDTH * 3 / 4 - 90, CANVAS_HEIGHT / 2 - 60, 180, 120, RETRO_PALETTE.red);
+}
+function renderStalemateScreen() { 
+    displayStatsPanel(); 
+    renderCustomText('DRAW', CANVAS_WIDTH / 2, 60, 34, RETRO_PALETTE.yellow, RETRO_PALETTE.black); 
+    renderPixelCard(playerMove, CANVAS_WIDTH / 4 - 90, CANVAS_HEIGHT / 2 - 60, 180, 120, RETRO_PALETTE.blue);
+    renderPixelCard(cpuMove, CANVAS_WIDTH * 3 / 4 - 90, CANVAS_HEIGHT / 2 - 60, 180, 120, RETRO_PALETTE.red);
+}
 
 function renderSelectionMenu() {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.88)'; ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -392,6 +393,13 @@ function updateCoreEngine() {
     const currentTimestamp = Date.now();
     const elapsedInPhase = currentTimestamp - phaseTimestamp;
 
+    const resetForMenu = () => {
+        gestureHistory = [];
+        verifiedGesture = null;
+        executionLockTimer = null;
+        switchPhase('menu_selection');
+    };
+
     if (currentPhase === 'menu_selection') {
         if (verifiedGesture === 'signal_thumbs_up') {
             if (!executionLockTimer) executionLockTimer = currentTimestamp;
@@ -422,33 +430,31 @@ function updateCoreEngine() {
         if (elapsedInPhase >= COUNTDOWN_SECONDS * 1000) {
             if (!playerMove) playerMove = GAME_WEAPONS[Math.floor(Math.random() * 3)];
             cpuMove = GAME_WEAPONS[Math.floor(Math.random() * 3)];
-            switchPhase('result_reveal');
+            const gameVerdict = playerMove === cpuMove ? 'stalemate' : RULES_MATRIX[playerMove] === cpuMove ? 'victory' : 'defeat';
+            if (gameVerdict === 'victory') {
+                recordTracker.playerWins++; createRetroExplosion(CANVAS_WIDTH / 3, CANVAS_HEIGHT / 2);
+                createRetroExplosion(CANVAS_WIDTH * 2 / 3, CANVAS_HEIGHT / 2);
+            } else if (gameVerdict === 'defeat') { recordTracker.cpuWins++; }
+            else { recordTracker.stalemates++; }
+            switchPhase(gameVerdict); backgroundEffectAlpha = 0;
         }
     }
 
-    if (currentPhase === 'result_reveal' && elapsedInPhase > 1500) {
-        const gameVerdict = playerMove === cpuMove ? 'stalemate' : RULES_MATRIX[playerMove] === cpuMove ? 'victory' : 'defeat';
-        if (gameVerdict === 'victory') {
-            recordTracker.playerWins++; createRetroExplosion(CANVAS_WIDTH / 3, CANVAS_HEIGHT / 2);
-            createRetroExplosion(CANVAS_WIDTH * 2 / 3, CANVAS_HEIGHT / 2);
-        } else if (gameVerdict === 'defeat') { recordTracker.cpuWins++; }
-        else { recordTracker.stalemates++; }
-        switchPhase(gameVerdict); backgroundEffectAlpha = 0;
-    }
-
-    if (currentPhase === 'victory' && elapsedInPhase > 3800) switchPhase('menu_selection');
-    if (currentPhase === 'defeat' && elapsedInPhase > 3500) switchPhase('menu_selection');
-    if (currentPhase === 'stalemate' && elapsedInPhase > 2400) switchPhase('menu_selection');
+    if (currentPhase === 'victory' && elapsedInPhase > 3800) resetForMenu();
+    if (currentPhase === 'defeat' && elapsedInPhase > 3500) resetForMenu();
+    if (currentPhase === 'stalemate' && elapsedInPhase > 2400) resetForMenu();
 }
 
 function handleCanvasClick(e) {
-    if (currentPhase !== 'menu_selection') return;
-    const bounds = gameCanvas.getBoundingClientRect();
-    const clkX = e.clientX - bounds.left; const clkY = e.clientY - bounds.top;
+    if (currentPhase !== 'menu_selection') return;    
     const btnW = 140, btnH = 50, btnY = CANVAS_HEIGHT / 2 + 20;
+    const quitBtnX = CANVAS_WIDTH / 2 - btnW - 15;
+    const againBtnX = CANVAS_WIDTH / 2 + 15;
 
-    if (clkX >= CANVAS_WIDTH / 2 + 15 && clkX <= CANVAS_WIDTH / 2 + 15 + btnW && clkY >= btnY && clkY <= btnY + btnH) resetGameToLobby();
-    if (clkX >= CANVAS_WIDTH / 2 - btnW - 15 && clkX <= CANVAS_WIDTH / 2 - 15 + btnW && clkY >= btnY && clkY <= btnY + btnH) switchPhase('game_terminated');
+    // AGAIN 按鈕的點擊偵測
+    if (cursorX >= againBtnX && cursorX <= againBtnX + btnW && cursorY >= btnY && cursorY <= btnY + btnH) resetGameToLobby();
+    // QUIT 按鈕的點擊偵測
+    if (cursorX >= quitBtnX && cursorX <= quitBtnX + btnW && cursorY >= btnY && cursorY <= btnY + btnH) switchPhase('game_terminated');
 }
 
 function resetGameToLobby() {
@@ -487,7 +493,7 @@ function masterGameLoop() {
 
     const router = {
         initial_loading: renderLoadingScreen, lobby_waiting: renderLobbyScreen, match_countdown: renderCountdownScreen,
-        result_reveal: renderRevealScreen, victory: renderVictoryScreen, defeat: renderDefeatScreen,
+        victory: renderVictoryScreen, defeat: renderDefeatScreen,
         stalemate: renderStalemateScreen, menu_selection: renderSelectionMenu, game_terminated: renderTerminationScreen
     };
     (router[currentPhase] || renderLoadingScreen)();
