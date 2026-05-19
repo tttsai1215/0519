@@ -12,7 +12,7 @@ let videoDrawProps = { x: 0, y: 0, w: CANVAS_WIDTH, h: CANVAS_HEIGHT };
 
 const GAME_WEAPONS = ['rock', 'paper', 'scissors'];
 const ICON_MAP = { rock: '✊', paper: '🖐', scissors: '✌️', signal_thumbs_up: '👍', signal_thumbs_down: '👎' };
-const LABEL_MAP = { rock: '石頭', paper: '布', scissors: '剪刀', signal_thumbs_up: '讚 / 繼續', signal_thumbs_down: '倒讚 / 結束' };
+const LABEL_MAP = { rock: '石頭', paper: '布', scissors: '剪刀', signal_thumbs_up: '讚', signal_thumbs_down: '倒讚' };
 const RULES_MATRIX = { rock: 'scissors', scissors: 'paper', paper: 'rock' };
 
 // 復古 8-bit 像素配色
@@ -361,20 +361,21 @@ function renderSelectionMenu() {
     displayStatsPanel();
     renderCustomText('PLAY AGAIN?', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 85, 32, RETRO_PALETTE.white);
 
-    renderCustomText('GESTURE: 👍 (Thumbs Up) to Continue / 👎 (Thumbs Down) to Quit', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 30, 14, RETRO_PALETTE.lightGray);
+    renderCustomText('手勢: 右手 👍 繼續 / 左手 👍 結束', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 30, 14, RETRO_PALETTE.lightGray);
 
     const btnW = 140, btnH = 50, btnY = CANVAS_HEIGHT / 2 + 20;
     renderPixelButton('QUIT', CANVAS_WIDTH / 2 - btnW - 15, btnY, btnW, btnH, RETRO_PALETTE.red);
     renderPixelButton('AGAIN', CANVAS_WIDTH / 2 + 15, btnY, btnW, btnH, RETRO_PALETTE.green);
 
-    if (currentPhase === 'menu_selection' && (verifiedGesture === 'signal_thumbs_up' || verifiedGesture === 'signal_thumbs_down')) {
+    if (currentPhase === 'menu_selection' && verifiedGesture === 'signal_thumbs_up') {
         const ratio = executionLockTimer ? Math.min(1, (Date.now() - executionLockTimer) / LOCK_TRIGGER_MS) : 0;
-        const isContinue = verifiedGesture === 'signal_thumbs_up';
+        const isContinue = trackingHandSide === 'Right';
         const colorBar = isContinue ? RETRO_PALETTE.green : RETRO_PALETTE.red;
+        const actionText = isContinue ? '繼續...' : '結束中...';
 
         ctx.fillStyle = '#444'; ctx.fillRect(CANVAS_WIDTH / 2 - 90, CANVAS_HEIGHT / 2 + 95, 180, 8);
-        ctx.fillStyle = colorBar; ctx.fillRect(CANVAS_WIDTH / 2 - 90, CANVAS_HEIGHT / 2 + 115, 180 * ratio, 6);
-        renderCustomText(isContinue ? 'LOADING...' : 'QUITTING...', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 115, 15, colorBar);
+        ctx.fillStyle = colorBar; ctx.fillRect(CANVAS_WIDTH / 2 - 90, CANVAS_HEIGHT / 2 + 95, 180 * ratio, 8);
+        renderCustomText(actionText, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 115, 15, colorBar);
     }
 }
 
@@ -392,11 +393,16 @@ function updateCoreEngine() {
     const elapsedInPhase = currentTimestamp - phaseTimestamp;
 
     if (currentPhase === 'menu_selection') {
-        if (verifiedGesture === 'signal_thumbs_up' || verifiedGesture === 'signal_thumbs_down') {
+        if (verifiedGesture === 'signal_thumbs_up') {
             if (!executionLockTimer) executionLockTimer = currentTimestamp;
             if (currentTimestamp - executionLockTimer >= LOCK_TRIGGER_MS) {
-                if (verifiedGesture === 'signal_thumbs_up') resetGameToLobby();
-                else if (verifiedGesture === 'signal_thumbs_down') switchPhase('game_terminated');
+                // MediaPipe 的 handedness 是根據真實的手，而非鏡像畫面
+                // 'Right' 代表玩家的右手
+                if (trackingHandSide === 'Right') {
+                    resetGameToLobby(); // 右手讚 -> 繼續
+                } else if (trackingHandSide === 'Left') {
+                    switchPhase('game_terminated'); // 左手讚 -> 結束
+                }
                 executionLockTimer = null;
             }
         } else { executionLockTimer = null; }
