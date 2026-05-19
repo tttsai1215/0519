@@ -5,9 +5,9 @@
 // ─────────────────────────────────────────────────────────────
 const CANVAS_WIDTH = 640;
 const CANVAS_HEIGHT = 480;
-const gameCanvas = document.getElementById('c');
-const ctx = gameCanvas.getContext('2d');
-const videoElement = document.getElementById('vid');
+
+// 將 DOM 元件改為全域變數，延遲到網頁載入完成後再綁定
+let gameCanvas, ctx, videoElement;
 
 const GAME_WEAPONS = ['rock', 'paper', 'scissors'];
 const ICON_MAP = { rock: '✊', paper: '🖐', scissors: '✌️', signal_continue: '☝️', signal_quit: '✊' };
@@ -46,19 +46,42 @@ let recordTracker = { playerWins: 0, cpuWins: 0, stalemates: 0 };
 let visualEffectsContainer = [];
 
 let cursorX = 0, cursorY = 0;
-gameCanvas.addEventListener('mousemove', event => {
-    const boundaries = gameCanvas.getBoundingClientRect();
-    cursorX = event.clientX - boundaries.left;
-    cursorY = event.clientY - boundaries.top;
-});
-gameCanvas.addEventListener('click', handleCanvasClick);
 
 // ─────────────────────────────────────────────────────────────
-//  MEDIAPIPE 核心初始化
+//  網頁載入安全防禦核心 (DOM READY & INITIALIZATION)
 // ─────────────────────────────────────────────────────────────
-(function () {
+window.addEventListener('DOMContentLoaded', () => {
+    // 1. 安全綁定網頁元件
+    gameCanvas = document.getElementById('c');
+    if (!gameCanvas) {
+        console.error("錯誤：找不到 ID 為 'c' 的 canvas 標籤，請確認 HTML 結構。");
+        return;
+    }
+    ctx = gameCanvas.getContext('2d');
+    videoElement = document.getElementById('vid');
+
+    // 2. 監聽滑鼠與點擊事件
+    gameCanvas.addEventListener('mousemove', event => {
+        const boundaries = gameCanvas.getBoundingClientRect();
+        cursorX = event.clientX - boundaries.left;
+        cursorY = event.clientY - boundaries.top;
+    });
+    gameCanvas.addEventListener('click', handleCanvasClick);
+
+    // 3. 啟動 MediaPipe 核心
+    initializeMediaPipe();
+
+    // 4. 正式推進渲染主循環
+    masterGameLoop();
+});
+
+// ─────────────────────────────────────────────────────────────
+//  MEDIAPIPE & 攝影機安全初始化
+// ─────────────────────────────────────────────────────────────
+function initializeMediaPipe() {
     const visionHands = new Hands({ locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
     visionHands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.75, minTrackingConfidence: 0.6 });
+    
     visionHands.onResults(results => {
         if (results.multiHandLandmarks && results.multiHandLandmarks[0]) {
             detectedPoints = results.multiHandLandmarks[0];
@@ -72,9 +95,28 @@ gameCanvas.addEventListener('click', handleCanvasClick);
             detectedPoints = null; verifiedGesture = null; trackingHandSide = null; gestureHistory = [];
         }
     });
-    new Camera(videoElement, { onFrame: async () => visionHands.send({ image: videoElement }), width: CANVAS_WIDTH, height: CANVAS_HEIGHT })
-        .start().then(() => { if (currentPhase === 'initial_loading') switchPhase('lobby_waiting'); });
-})();
+
+    if (videoElement) {
+        try {
+            const camera = new Camera(videoElement, { 
+                onFrame: async () => { await visionHands.send({ image: videoElement }); }, 
+                width: CANVAS_WIDTH, 
+                height: CANVAS_HEIGHT 
+            });
+            camera.start()
+                .then(() => { if (currentPhase === 'initial_loading') switchPhase('lobby_waiting'); })
+                .catch(err => {
+                    console.warn("攝影機啟動失敗（可能無鏡頭或未允許權限），切換至無鏡頭預覽模式:", err);
+                    if (currentPhase === 'initial_loading') switchPhase('lobby_waiting');
+                });
+        } catch (e) {
+            console.warn("無法初始化攝影機物件（目前環境無裝置），維持無鏡頭預覽模式。");
+            if (currentPhase === 'initial_loading') switchPhase('lobby_waiting');
+        }
+    } else {
+        if (currentPhase === 'initial_loading') switchPhase('lobby_waiting');
+    }
+}
 
 // ─────────────────────────────────────────────────────────────
 //  手勢運算與特徵判定解碼 (CLASSIFICATION)
@@ -85,13 +127,11 @@ function analyzeCoordinates(pts) {
     const ringExtended = pts[16].y < pts[14].y;
     const pinkyExtended = pts[20].y < pts[18].y;
 
-    // 基本猜拳手勢
     if (!indexExtended && !middleExtended && !ringExtended && !pinkyExtended) return 'rock';
     if (indexExtended && middleExtended && ringExtended && pinkyExtended) return 'paper';
     if (indexExtended && middleExtended && !ringExtended && !pinkyExtended) return 'scissors';
     
-    // 全新獨家設計選單控制手勢：
-    // ☝️ 僅食指伸直 = 繼續遊戲
+    // 選單控制手勢：☝️ 僅食指伸直 = 繼續遊戲
     if (indexExtended && !middleExtended && !ringExtended && !pinkyExtended) return 'signal_continue';
     
     return 'unidentified';
@@ -128,14 +168,13 @@ function createPixelExplosion(originX, originY, colorHex) {
 function updateAndRenderEffects() {
     visualEffectsContainer.forEach(part => {
         part.posX += part.velX; part.posY += part.velY;
-        part.velY += 0.22; // 重力加速度
+        part.velY += 0.22; 
         part.velX *= 0.98;
         part.remainingLife -= part.decayRate;
         
         ctx.save();
         ctx.globalAlpha = part.remainingLife;
         ctx.fillStyle = part.renderColor;
-        // 完全捨棄原本的圓形粒子，改為街機風格的方形像素塊
         ctx.fillRect(part.posX, part.posY, part.blockSize, part.blockSize);
         ctx.restore();
     });
@@ -152,7 +191,6 @@ function triggerGlitchPattern(intensity) {
     ctx.fillStyle = '#12021C';
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
-    // 隨機產生橫向數位斷層跳格
     ctx.fillStyle = '#FF0055';
     for (let i = 0; i < 5; i++) {
         const barY = Math.random() * CANVAS_HEIGHT;
@@ -160,7 +198,6 @@ function triggerGlitchPattern(intensity) {
         ctx.fillRect(0, barY, CANVAS_WIDTH, barHeight);
     }
     
-    // 繪製賽博街機電子警告彈窗
     ctx.globalAlpha = intensity;
     ctx.fillStyle = '#000000';
     ctx.strokeStyle = '#FF0055';
@@ -223,7 +260,6 @@ function renderModernButton(textLabel, startX, startY, blockW, blockH, activeCol
     ctx.fillStyle = isHovered ? '#FFFFFF' : activeColor;
     ctx.shadowColor = activeColor; ctx.shadowBlur = isHovered ? 26 : 10;
     
-    // 改為絕對直角的電子硬派方框，完全避開圓角
     ctx.fillRect(startX, startY, blockW, blockH);
     ctx.shadowBlur = 0;
     ctx.font = `bold ${Math.floor(blockH * 0.36)}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -329,14 +365,12 @@ function renderSelectionMenu() {
     displayStatsPanel();
     renderCustomText('下一回合，重啟作戰？', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 75, 28, '#FFFFFF');
     
-    // 完全與原本迥異的手勢控制核心提示
-    renderCustomText('💡 街機手勢：☝️ 伸出食指 🚀 繼續  ·  ✊ 握拳 門戶 🚪 結束', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 15, 14, '#00FFFF');
+    renderCustomText('💡 街機手勢：☝️ 伸出食指 🚀 繼續  ·  ✊ 握拳 🚪 結束', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 15, 14, '#00FFFF');
     
     const btnW = 120, btnH = 46, btnY = CANVAS_HEIGHT / 2 + 45;
     renderModernButton('🚪 QUIT', CANVAS_WIDTH / 2 - btnW - 16, btnY, btnW, btnH, '#FF0055');
     renderModernButton('🚀 AGAIN', CANVAS_WIDTH / 2 + 16, btnY, btnW, btnH, '#00FF66');
 
-    // 選單蓄力判定進度條
     if (currentPhase === 'menu_selection' && (verifiedGesture === 'signal_continue' || verifiedGesture === 'rock')) {
         const ratio = executionLockTimer ? Math.min(1, (Date.now() - executionLockTimer) / LOCK_TRIGGER_MS) : 0;
         const isContinue = verifiedGesture === 'signal_continue';
@@ -362,7 +396,6 @@ function updateCoreEngine() {
     const elapsedInPhase = currentTimestamp - phaseTimestamp;
 
     if (currentPhase === 'menu_selection') {
-        // 核心修改點：全新的選單判斷，食指繼續、握拳結束
         if (verifiedGesture === 'signal_continue' || verifiedGesture === 'rock') {
             if (!executionLockTimer) executionLockTimer = currentTimestamp;
             if (currentTimestamp - executionLockTimer >= LOCK_TRIGGER_MS) {
@@ -423,7 +456,15 @@ function resetGameToLobby() {
 }
 
 function masterGameLoop() {
-    updateCoreEngine(); ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    updateCoreEngine();
+    
+    // 安全防禦：如果 ctx 還沒初始化，先跳過這幀
+    if (!ctx) {
+        requestAnimationFrame(masterGameLoop);
+        return;
+    }
+
+    ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
     if (currentPhase !== 'initial_loading' && currentPhase !== 'game_terminated') {
         if (videoElement && videoElement.readyState >= 2) {
@@ -440,5 +481,3 @@ function masterGameLoop() {
     (router[currentPhase] || renderLoadingScreen)();
     requestAnimationFrame(masterGameLoop);
 }
-
-masterGameLoop();
