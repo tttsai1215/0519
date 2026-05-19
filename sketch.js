@@ -480,4 +480,8 @@ function masterGameLoop() {
     };
     (router[currentPhase] || renderLoadingScreen)();
     requestAnimationFrame(masterGameLoop);
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> 6dbaf4a10d73f3af9d4ed460bb145efaca6a8922
