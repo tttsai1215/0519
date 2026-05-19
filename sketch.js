@@ -335,24 +335,29 @@ function renderCountdownScreen() {
     renderCustomText(`LOCKED: ${ICON_MAP[playerMove] || '❓'} ${LABEL_MAP[playerMove]}`, CANVAS_WIDTH / 2, 20, 16, RETRO_PALETTE.white);
 }
 
+function renderMatchCards() {
+    renderCustomText('PLAYER', CANVAS_WIDTH / 4, CANVAS_HEIGHT / 2 - 90, 24, RETRO_PALETTE.blue);
+    renderCustomText('CPU', CANVAS_WIDTH * 3 / 4, CANVAS_HEIGHT / 2 - 90, 24, RETRO_PALETTE.red);
+    renderCustomText('VS', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, 34, RETRO_PALETTE.white, RETRO_PALETTE.black);
+    renderPixelCard(playerMove, CANVAS_WIDTH / 4 - 90, CANVAS_HEIGHT / 2 - 60, 180, 120, RETRO_PALETTE.blue);
+    renderPixelCard(cpuMove, CANVAS_WIDTH * 3 / 4 - 90, CANVAS_HEIGHT / 2 - 60, 180, 120, RETRO_PALETTE.red);
+}
+
 function renderVictoryScreen() { 
     updateAndRenderEffects(); 
     displayStatsPanel(); 
     renderCustomText('YOU WIN!', CANVAS_WIDTH / 2, 60, 34, RETRO_PALETTE.green, RETRO_PALETTE.black); 
-    renderPixelCard(playerMove, CANVAS_WIDTH / 4 - 90, CANVAS_HEIGHT / 2 - 60, 180, 120, RETRO_PALETTE.blue);
-    renderPixelCard(cpuMove, CANVAS_WIDTH * 3 / 4 - 90, CANVAS_HEIGHT / 2 - 60, 180, 120, RETRO_PALETTE.red);
+    renderMatchCards();
 }
 function renderDefeatScreen() { 
     displayStatsPanel(); 
     renderCustomText('YOU LOSE', CANVAS_WIDTH / 2, 60, 34, RETRO_PALETTE.red, RETRO_PALETTE.black); 
-    renderPixelCard(playerMove, CANVAS_WIDTH / 4 - 90, CANVAS_HEIGHT / 2 - 60, 180, 120, RETRO_PALETTE.blue);
-    renderPixelCard(cpuMove, CANVAS_WIDTH * 3 / 4 - 90, CANVAS_HEIGHT / 2 - 60, 180, 120, RETRO_PALETTE.red);
+    renderMatchCards();
 }
 function renderStalemateScreen() { 
     displayStatsPanel(); 
     renderCustomText('DRAW', CANVAS_WIDTH / 2, 60, 34, RETRO_PALETTE.yellow, RETRO_PALETTE.black); 
-    renderPixelCard(playerMove, CANVAS_WIDTH / 4 - 90, CANVAS_HEIGHT / 2 - 60, 180, 120, RETRO_PALETTE.blue);
-    renderPixelCard(cpuMove, CANVAS_WIDTH * 3 / 4 - 90, CANVAS_HEIGHT / 2 - 60, 180, 120, RETRO_PALETTE.red);
+    renderMatchCards();
 }
 
 function renderSelectionMenu() {
