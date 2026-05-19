@@ -3,11 +3,12 @@
 // ─────────────────────────────────────────────────────────────
 //  系統環境與靜態配置 (CONFIG)
 // ─────────────────────────────────────────────────────────────
-const CANVAS_WIDTH = 640;
-const CANVAS_HEIGHT = 480;
+let CANVAS_WIDTH = window.innerWidth;
+let CANVAS_HEIGHT = window.innerHeight;
 
 // 將 DOM 元件改為全域變數，延遲到網頁載入完成後再綁定
 let gameCanvas, ctx, videoElement;
+let videoDrawProps = { x: 0, y: 0, w: CANVAS_WIDTH, h: CANVAS_HEIGHT };
 
 const GAME_WEAPONS = ['rock', 'paper', 'scissors'];
 const ICON_MAP = { rock: '✊', paper: '🖐', scissors: '✌️', signal_thumbs_up: '👍', signal_thumbs_down: '👎' };
@@ -57,8 +58,19 @@ window.addEventListener('DOMContentLoaded', () => {
         console.error("錯誤：找不到 ID 為 'c' 的 canvas 標籤，請確認 HTML 結構。");
         return;
     }
+    gameCanvas.width = CANVAS_WIDTH;
+    gameCanvas.height = CANVAS_HEIGHT;
     ctx = gameCanvas.getContext('2d');
     videoElement = document.getElementById('vid');
+
+    window.addEventListener('resize', () => {
+        CANVAS_WIDTH = window.innerWidth;
+        CANVAS_HEIGHT = window.innerHeight;
+        if (gameCanvas) {
+            gameCanvas.width = CANVAS_WIDTH;
+            gameCanvas.height = CANVAS_HEIGHT;
+        }
+    });
 
     // 2. 監聽滑鼠與點擊事件
     gameCanvas.addEventListener('mousemove', event => {
@@ -100,8 +112,8 @@ function initializeMediaPipe() {
         try {
             const camera = new Camera(videoElement, { 
                 onFrame: async () => { await visionHands.send({ image: videoElement }); }, 
-                width: CANVAS_WIDTH, 
-                height: CANVAS_HEIGHT 
+                width: 640, 
+                height: 480 
             });
             camera.start()
                 .then(() => { if (currentPhase === 'initial_loading') switchPhase('lobby_waiting'); })
@@ -201,8 +213,8 @@ function drawHandJoints() {
     if (!detectedPoints) return;
     ctx.save();
     detectedPoints.forEach((pt, idx) => {
-        const cx = (1 - pt.x) * CANVAS_WIDTH;
-        const cy = pt.y * CANVAS_HEIGHT;
+        const cx = videoDrawProps.x + (1 - pt.x) * videoDrawProps.w;
+        const cy = videoDrawProps.y + pt.y * videoDrawProps.h;
         ctx.fillStyle = idx === 0 ? RETRO_PALETTE.red : RETRO_PALETTE.blue;
         ctx.fillRect(cx - 3, cy - 3, 6, 6);
     });
@@ -234,15 +246,32 @@ function renderPixelButton(textLabel, startX, startY, blockW, blockH, activeColo
 
 function displayStatsPanel() {
     ctx.save();
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-    ctx.fillRect(10, 10, 235, 30);
-    ctx.strokeStyle = RETRO_PALETTE.white; ctx.lineWidth = 2;
-    ctx.strokeRect(10, 10, 235, 30);
+    // 圓角半透明背景
+    ctx.fillStyle = 'rgba(20, 20, 40, 0.75)';
+    ctx.beginPath();
+    if (ctx.roundRect) {
+        ctx.roundRect(15, 15, 250, 45, 12);
+    } else {
+        ctx.rect(15, 15, 250, 45);
+    }
+    ctx.fill();
+    
+    // 金色發光邊框
+    ctx.strokeStyle = RETRO_PALETTE.yellow; 
+    ctx.lineWidth = 2;
+    ctx.shadowColor = RETRO_PALETTE.yellow;
+    ctx.shadowBlur = 5;
+    ctx.stroke();
 
-    ctx.font = 'bold 14px monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-    ctx.fillStyle = RETRO_PALETTE.green; ctx.fillText(`勝: ${recordTracker.playerWins}`, 20, 25);
-    ctx.fillStyle = RETRO_PALETTE.red; ctx.fillText(`敗: ${recordTracker.cpuWins}`, 90, 25);
-    ctx.fillStyle = RETRO_PALETTE.yellow; ctx.fillText(`平: ${recordTracker.stalemates}`, 160, 25);
+    ctx.shadowBlur = 0; // 關閉文字的陰影
+    ctx.font = 'bold 18px "Segoe UI", Arial, sans-serif'; 
+    ctx.textBaseline = 'middle'; 
+    ctx.textAlign = 'left';
+    
+    // 使用新圖示與顏色
+    ctx.fillStyle = '#4cd137'; ctx.fillText(`👑 ${recordTracker.playerWins}`, 30, 38);
+    ctx.fillStyle = '#e84118'; ctx.fillText(`💀 ${recordTracker.cpuWins}`, 110, 38);
+    ctx.fillStyle = '#fbc531'; ctx.fillText(`🤝 ${recordTracker.stalemates}`, 190, 38);
     ctx.restore();
 }
 
@@ -434,8 +463,19 @@ function masterGameLoop() {
     
     if (currentPhase !== 'initial_loading' && currentPhase !== 'game_terminated') {
         if (videoElement && videoElement.readyState >= 2) {
-            ctx.save(); ctx.translate(CANVAS_WIDTH, 0); ctx.scale(-1, 1);
-            ctx.drawImage(videoElement, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT); ctx.restore();
+            const vidW = videoElement.videoWidth || 640;
+            const vidH = videoElement.videoHeight || 480;
+            const scale = Math.max(CANVAS_WIDTH / vidW, CANVAS_HEIGHT / vidH);
+            videoDrawProps.w = vidW * scale;
+            videoDrawProps.h = vidH * scale;
+            videoDrawProps.x = (CANVAS_WIDTH - videoDrawProps.w) / 2;
+            videoDrawProps.y = (CANVAS_HEIGHT - videoDrawProps.h) / 2;
+
+            ctx.save(); 
+            ctx.translate(CANVAS_WIDTH, 0); 
+            ctx.scale(-1, 1);
+            ctx.drawImage(videoElement, videoDrawProps.x, videoDrawProps.y, videoDrawProps.w, videoDrawProps.h); 
+            ctx.restore();
         }
     }
 
